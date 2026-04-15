@@ -1,0 +1,584 @@
+openapi: 3.0.3
+info:
+  title: SparkleClean Pro API
+  description: |
+    Enterprise cleaning platform API — Australia-optimised.
+
+    **Agentic Architecture:**
+    - DFS for endpoint dependency resolution
+    - Tree of Thoughts for API design patterns
+    - Graph of Thoughts for event flow mapping
+    - MCTS for rate-limiting strategies
+    - OASIS-IS for agent API governance
+    - Chain of Thoughts for implementation sequencing
+  version: 0.1.0
+  contact:
+    name: SparkleClean Pro Engineering
+    email: engineering@sparkleclean.com.au
+
+servers:
+  - url: https://api.sparkleclean.com.au/v1
+    description: Production
+  - url: http://localhost:3001
+    description: Development
+
+security:
+  - access-token: []
+  - api-key: []
+
+tags:
+  - name: auth
+    description: Authentication & token management
+  - name: bookings
+    description: Booking lifecycle — create, confirm, cancel, complete
+  - name: pricing
+    description: Dynamic pricing engine with frequency discounts
+  - name: geo
+    description: PostGIS suburb lookups & service area queries
+  - name: content
+    description: SEO pages, FAQs, blog — AI/RAG managed
+  - name: webhooks
+    description: Event delivery & retry management
+  - name: admin
+    description: Admin-only — RBAC enforced
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@sparkleclean.com.au
+                password:
+                  type: string
+                  format: password
+                  example: securepassword
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user profile
+      security:
+        - access-token: []
+      responses:
+        '200':
+          description: User profile with relations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  /bookings:
+    post:
+      tags: [bookings]
+      summary: Create a new booking
+      security:
+        - access-token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBooking'
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{id}:
+    get:
+      tags: [bookings]
+      summary: Get booking details
+      security:
+        - access-token: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Booking with assignments and payments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{id}/cancel:
+    post:
+      tags: [bookings]
+      summary: Cancel a booking
+      security:
+        - access-token: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /pricing/services:
+    get:
+      tags: [pricing]
+      summary: List all active services
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+
+  /pricing/quote:
+    get:
+      tags: [pricing]
+      summary: Get a price quote
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: propertyId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: frequency
+          in: query
+          schema:
+            type: string
+            enum: [ONCE, WEEKLY, FORTNIGHTLY, MONTHLY]
+            default: ONCE
+      responses:
+        '200':
+          description: Price quote with GST breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceQuote'
+
+  /geo/suburbs:
+    get:
+      tags: [geo]
+      summary: Search Australian suburbs
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of matching suburbs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Suburb'
+
+  /geo/suburbs/{slug}:
+    get:
+      tags: [geo]
+      summary: Get suburb details (SEO landing page data)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            example: perth-wa-6000
+      responses:
+        '200':
+          description: Suburb with SEO metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suburb'
+
+  /geo/cleaners/{suburbId}:
+    get:
+      tags: [geo]
+      summary: Find available cleaners in a service area
+      parameters:
+        - name: suburbId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: radiusKm
+          in: query
+          schema:
+            type: number
+            default: 25
+      responses:
+        '200':
+          description: Available cleaners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CleanerSummary'
+
+  /geo/coverage:
+    get:
+      tags: [geo]
+      summary: Get service coverage by state
+      responses:
+        '200':
+          description: Coverage by state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    state:
+                      type: string
+                    suburbCount:
+                      type: integer
+
+  /content/pages/{slug}:
+    get:
+      tags: [content]
+      summary: Get a published content page
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Content page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentPage'
+
+  /content/faqs:
+    get:
+      tags: [content]
+      summary: Get all FAQ entries
+      responses:
+        '200':
+          description: FAQ list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    question:
+                      type: string
+                    answer:
+                      type: string
+                    slug:
+                      type: string
+
+components:
+  securitySchemes:
+    access-token:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    api-key:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          enum: [CUSTOMER, CLEANER, ADMIN, SUPER_ADMIN, AGENT]
+
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            customer:
+              type: object
+              properties:
+                properties:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Property'
+            cleaner:
+              type: object
+            adminProfile:
+              type: object
+
+    Property:
+      type: object
+      properties:
+        id:
+          type: string
+        addressLine1:
+          type: string
+        suburb:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+        bedrooms:
+          type: integer
+        bathrooms:
+          type: integer
+        totalAreaSqm:
+          type: number
+
+    CreateBooking:
+      type: object
+      required: [propertyId, serviceId, scheduledDate]
+      properties:
+        propertyId:
+          type: string
+        serviceId:
+          type: string
+        scheduledDate:
+          type: string
+          format: date-time
+        frequency:
+          type: string
+          enum: [ONCE, WEEKLY, FORTNIGHTLY, MONTHLY]
+          default: ONCE
+        recurrenceWeeks:
+          type: integer
+        notes:
+          type: string
+        accessInstructions:
+          type: string
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+        bookingNumber:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, NO_SHOW]
+        scheduledDate:
+          type: string
+          format: date-time
+        durationMin:
+          type: integer
+        basePrice:
+          type: number
+        discountPct:
+          type: number
+        gstAmount:
+          type: number
+        totalAmount:
+          type: number
+        currency:
+          type: string
+          default: AUD
+        service:
+          $ref: '#/components/schemas/Service'
+        property:
+          $ref: '#/components/schemas/Property'
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        category:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        basePrice:
+          type: number
+        pricePerHour:
+          type: number
+        includes:
+          type: array
+          items:
+            type: string
+
+    PriceQuote:
+      type: object
+      properties:
+        basePrice:
+          type: number
+        discountPct:
+          type: number
+        discountAmount:
+          type: number
+        afterDiscount:
+          type: number
+        gstAmount:
+          type: number
+        total:
+          type: number
+        currency:
+          type: string
+          default: AUD
+        durationMin:
+          type: integer
+        frequency:
+          type: string
+
+    Suburb:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+        slug:
+          type: string
+        metaTitle:
+          type: string
+        metaDescription:
+          type: string
+        seoContent:
+          type: string
+        searchVolume:
+          type: integer
+
+    CleanerSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        rating:
+          type: number
+        reviewCount:
+          type: integer
+        maxRadiusKm:
+          type: number
+
+    ContentPage:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        metaTitle:
+          type: string
+        metaDescription:
+          type: string
+        body:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time

@@ -1,0 +1,507 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis(map: "postgis")]
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════
+
+enum Role {
+  CUSTOMER
+  CLEANER
+  ADMIN
+  SUPER_ADMIN
+  AGENT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+  PENDING_VERIFICATION
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingFrequency {
+  ONCE
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  STRIPE
+  BANK_TRANSFER
+  CASH
+}
+
+enum ServiceCategory {
+  REGULAR
+  DEEP
+  END_OF_LEASE
+  COMMERCIAL
+  CARPET
+  WINDOW
+  IRONING
+  OVEN
+  FRIDGE
+}
+
+enum EventType {
+  BOOKING_CREATED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_COMPLETED
+  CLEANER_ASSIGNED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  REVIEW_SUBMITTED
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+}
+
+enum AgentRole {
+  SEO_CONTENT
+  SUPPORT_TRIAGE
+  ROUTE_OPTIMIZER
+  REVENUE
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODELS
+// ═══════════════════════════════════════════════════════════
+
+model User {
+  id          String     @id @default(cuid())
+  email       String     @unique
+  phone       String?    @unique
+  firstName   String
+  lastName    String
+  avatarUrl   String?
+  role        Role       @default(CUSTOMER)
+  status      UserStatus @default(ACTIVE)
+  preferences Json?      @default("{}")
+  metadata    Json?      @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  lastLoginAt DateTime?
+
+  // Relations
+  customer      Customer?
+  cleaner       Cleaner?
+  adminProfile  AdminProfile?
+  bookings      Booking[]
+  reviews       Review[]
+  auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
+
+  @@index([email])
+  @@index([role, status])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  abn         String?
+  company     String?
+  gstExempt   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  properties  Property[]
+  bookings    Booking[]
+  reviews     Review[]
+  invoices    Invoice[]
+
+  @@index([userId])
+}
+
+model Cleaner {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  policeCheckExpiry DateTime?
+  insuranceNumber String?
+  rating          Float    @default(0)
+  reviewCount     Int      @default(0)
+  maxRadiusKm     Float    @default(25)
+  isActive        Boolean  @default(true)
+  onboardedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  serviceAreaIds  String[]
+
+  assignments     BookingAssignment[]
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model AdminProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  twoFactorEnabled Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  permissions      Permission[]
+  departments      String[]
+
+  @@index([userId])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  adminId     String
+  admin       AdminProfile @relation(fields: [adminId], references: [id])
+  resource    String
+  actions     String[] // ["create","read","update","delete","approve"]
+  scope       String?  // "all", "own", "team", "suburb:XYZ"
+  createdAt   DateTime @default(now())
+
+  @@unique([adminId, resource])
+}
+
+model Property {
+  id              String   @id @default(cuid())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  addressLine1    String
+  addressLine2    String?
+  suburb          String
+  state           String
+  postcode        String   @db.VarChar(4)
+  country         String   @default("AU")
+  location        Unsupported("geometry(Point, 4326)")?
+  propertyType    String   @default("house") // house, apartment, unit, townhouse, office, warehouse
+  bedrooms        Int      @default(0)
+  bathrooms       Int      @default(0)
+  parkingSpaces   Int?
+  totalAreaSqm    Float?
+  floorCount      Int?
+  hasPool         Boolean  @default(false)
+  hasPets         Boolean  @default(false)
+  accessNotes     String?
+  gateCode        String?
+  parkingNotes    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bookings        Booking[]
+
+  @@index([suburb, state, postcode])
+  @@index([customerId])
+}
+
+model Suburb {
+  id               String   @id @default(cuid())
+  name             String
+  state            String
+  postcode         String   @db.VarChar(4)
+  boundary         Unsupported("geometry(Polygon, 4326)")?
+  centroid         Unsupported("geometry(Point, 4326)")?
+  slug             String   @unique
+  metaTitle        String?
+  metaDescription  String?
+  seoContent       String?
+  searchVolume     Int?
+  competitionScore Float?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pricingRules     PricingRule[]
+
+  @@index([slug])
+  @@index([state, isActive])
+}
+
+model Service {
+  id               String           @id @default(cuid())
+  category         ServiceCategory
+  name             String
+  description      String
+  basePrice        Float
+  pricePerSqm      Float            @default(0)
+  pricePerBedroom  Float            @default(0)
+  pricePerBathroom Float            @default(0)
+  minDurationMin   Int              @default(60)
+  pricePerHour     Float
+  includes         String[]
+  excludedAreas    String[]
+  isActive         Boolean          @default(true)
+  gstInclusive     Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  pricingRules     PricingRule[]
+  bookings         Booking[]
+
+  @@index([category, isActive])
+}
+
+model PricingRule {
+  id            String   @id @default(cuid())
+  serviceId     String
+  service       Service  @relation(fields: [serviceId], references: [id])
+  suburbId      String?
+  suburb        Suburb?  @relation(fields: [suburbId], references: [id])
+  frequency     BookingFrequency
+  discountPct   Float    @default(0)
+  minimumCharge Float    @default(0)
+  validFrom     DateTime @default(now())
+  validTo       DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@index([serviceId, frequency, isActive])
+  @@index([suburbId])
+}
+
+model Booking {
+  id              String           @id @default(cuid())
+  bookingNumber   String           @unique
+  customerId      String
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  propertyId      String
+  property        Property         @relation(fields: [propertyId], references: [id])
+  serviceId       String
+  service         Service          @relation(fields: [serviceId], references: [id])
+  status          BookingStatus    @default(PENDING)
+  frequency       BookingFrequency @default(ONCE)
+  scheduledDate   DateTime
+  scheduledEnd    DateTime
+  durationMin     Int
+  basePrice       Float
+  discountPct     Float            @default(0)
+  gstAmount       Float
+  totalAmount     Float
+  currency        String           @default("AUD")
+  notes           String?
+  cleanerNotes    String?
+  accessInstructions String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancellationReason String?
+
+  // Recurring
+  parentId        String?
+  parent          Booking?         @relation("RecurringBookings", fields: [parentId], references: [id])
+  children        Booking[]        @relation("RecurringBookings")
+  recurrenceEnd   DateTime?
+
+  // Relations
+  assignments     BookingAssignment[]
+  payments        Payment[]
+  invoices        Invoice[]
+
+  @@index([customerId, status])
+  @@index([propertyId])
+  @@index([serviceId])
+  @@index([scheduledDate])
+  @@index([status, scheduledDate])
+  @@index([bookingNumber])
+}
+
+model BookingAssignment {
+  id          String   @id @default(cuid())
+  bookingId   String
+  booking     Booking  @relation(fields: [bookingId], references: [id])
+  cleanerId   String
+  cleaner     Cleaner  @relation(fields: [cleanerId], references: [id])
+  assignedAt  DateTime @default(now())
+  status      String   @default("assigned") // assigned, accepted, en_route, on_site
+  rating      Int?     // 1-5
+  feedback    String?
+
+  @@unique([bookingId, cleanerId])
+  @@index([cleanerId])
+  @@index([bookingId, status])
+}
+
+model Payment {
+  id              String         @id @default(cuid())
+  bookingId       String
+  booking         Booking        @relation(fields: [bookingId], references: [id])
+  stripePaymentId String?        @unique
+  amount          Float
+  currency        String         @default("AUD")
+  status          PaymentStatus  @default(PENDING)
+  method          PaymentMethod  @default(STRIPE)
+  gstAmount       Float          @default(0)
+  paidAt          DateTime?
+  failureReason   String?
+  refundedAmount  Float          @default(0)
+  metadata        Json           @default("{}")
+  createdAt       DateTime       @default(now())
+
+  @@index([bookingId])
+  @@index([status])
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  invoiceNumber   String   @unique
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  bookingId       String?
+  booking         Booking? @relation(fields: [bookingId], references: [id])
+  subtotal        Float
+  gstAmount       Float
+  total           Float
+  status          String   @default("pending") // pending, paid, overdue, cancelled
+  dueDate         DateTime
+  issuedAt        DateTime @default(now())
+  paidAt          DateTime?
+  xeroInvoiceId   String?
+  metadata        Json     @default("{}")
+
+  @@index([customerId])
+  @@index([status, dueDate])
+  @@index([invoiceNumber])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  bookingId   String   @unique
+  rating      Int      // 1-5
+  comment     String?
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([rating])
+}
+
+model ContentPage {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  type         String   // "service", "suburb", "faq", "blog"
+  title        String
+  metaTitle    String?
+  metaDescription String?
+  ogImage      String?
+  body         String
+  bodyJson     Json?
+  status       String   @default("draft") // draft, published, archived
+  publishedAt  DateTime?
+  authorId     String?
+  author       User?    @relation(fields: [authorId], references: [id])
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([slug, status])
+  @@index([type, status])
+}
+
+model AgentConfig {
+  id          String    @id @default(cuid())
+  role        AgentRole @unique
+  name        String
+  description String?
+  enabled     Boolean   @default(false)
+  config      Json      @default("{}")
+  allowedResources String[]
+  deniedResources String[]
+  geoScope    String    @default("all")
+  requireHumanApproval Boolean @default(false)
+  lastRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([role, enabled])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  eventType EventType
+  entity    String   // "booking", "payment", "user", etc.
+  entityId  String
+  before    Json?
+  after     Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([eventType, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@index([userId])
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  keyHash     String   @unique
+  permissions String[]
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model WebhookEndpoint {
+  id          String   @id @default(cuid())
+  url         String
+  secret      String   @unique
+  events      EventType[]
+  isActive    Boolean  @default(true)
+  failureCount Int     @default(0)
+  lastFailedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model WebhookDelivery {
+  id          String    @id @default(cuid())
+  endpointId  String
+  eventType   EventType
+  payload     Json
+  status      String    @default("pending") // pending, delivered, failed
+  attempts    Int       @default(0)
+  nextRetryAt DateTime?
+  response    Json?
+  createdAt   DateTime  @default(now())
+  deliveredAt DateTime?
+
+  @@index([status, nextRetryAt])
+  @@index([eventType])
+}
