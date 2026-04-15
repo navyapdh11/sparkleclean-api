@@ -11,19 +11,17 @@ import { PricingModule } from './pricing/pricing.module';
 import { GeoModule } from './geo/geo.module';
 import { ContentModule } from './content/content.module';
 import { WebhookModule } from './webhook/webhook.module';
+import { PaymentModule } from './payment/payment.module';
+import { XeroModule } from './xero/xero.module';
+import { CleanerAssignmentModule } from './cleaner-assignment/cleaner-assignment.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
-    // Env
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // Rate limiting: 60 req/min global, 100 for auth
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 60,
-    }]),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
 
-    // BullMQ / Redis for webhook retries & async jobs
     BullModule.forRoot({
       connection: {
         host: process.env.REDIS_HOST ?? 'localhost',
@@ -31,26 +29,29 @@ import { WebhookModule } from './webhook/webhook.module';
       },
     }),
 
-    // Cron for recurring booking generation
     ScheduleModule.forRoot(),
 
-    // JWT defaults
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET ?? 'sparkle-clean-dev-secret-change-in-prod',
       signOptions: { expiresIn: process.env.JWT_EXPIRES ?? '24h' },
     }),
 
-    // Prisma (singleton)
     PrismaModule,
 
-    // Feature modules
+    // Phase 2 modules
     AuthModule,
     BookingModule,
     PricingModule,
     GeoModule,
     ContentModule,
     WebhookModule,
+
+    // Phase 3 modules
+    PaymentModule,
+    XeroModule,
+    CleanerAssignmentModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
