@@ -1,0 +1,55 @@
+databases:
+  - name: sparkleclean-db
+    databaseName: sparkleclean
+    user: sparkleclean_user
+    plan: free
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+  - name: sparkleclean-redis
+    name: sparkleclean-redis
+    plan: free
+
+services:
+  - type: web
+    name: sparkleclean-api
+    env: docker
+    region: oregon
+    plan: free
+    healthCheckPath: /api/docs
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sparkleclean-db
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: sparkleclean-redis
+          property: host
+      - key: REDIS_PORT
+        value: "6379"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES
+        value: 24h
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: XERO_TENANT_ID
+        sync: false
+      - key: XERO_CLIENT_ID
+        sync: false
+      - key: XERO_CLIENT_SECRET
+        sync: false
+      - key: XERO_ACCESS_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://sparkleclean.com.au

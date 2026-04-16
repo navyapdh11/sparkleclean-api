@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/config/prisma.module';
+import { HealthController } from './common/health.controller';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { PricingModule } from './pricing/pricing.module';
@@ -53,5 +54,6 @@ import { AdminModule } from './admin/admin.module';
     CleanerAssignmentModule,
     AdminModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
