@@ -2,22 +2,19 @@
 # SparkleClean Pro API — Production Dockerfile
 # ═══════════════════════════════════════════════════════════
 
-# ── Stage 1: Install deps + build ──
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+COPY package.json ./
+RUN pnpm install --no-frozen-lockfile
 
 COPY prisma/ ./prisma/
 COPY src/ ./src/
 COPY tsconfig.json nest-cli.json ./
 
-# Generate Prisma client + build
 RUN npx prisma generate
 RUN pnpm run build
 
@@ -27,19 +24,16 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Install system deps needed by Prisma/Postgres native libs
 RUN apk add --no-cache openssl
 
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile --prod
+COPY package.json ./
+RUN pnpm install --prod --no-frozen-lockfile
 
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Non-root user
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup appuser
 USER appuser
